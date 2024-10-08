@@ -1,4 +1,5 @@
-import openai
+from openai import OpenAI
+from openai import NOT_GIVEN
 import googlemaps
 from geopy.geocoders import Nominatim
 from fastapi import FastAPI, HTTPException
@@ -7,10 +8,11 @@ from typing import List, Optional
 from enum import Enum
 from dotenv import load_dotenv
 import os
+import json
 
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 google_maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=google_maps_api_key)
 
@@ -22,20 +24,62 @@ app = FastAPI(
 )
 
 
+class temp_db:
+    def __init__(self):
+        self.db = "temp.json"
+
+    def get(self, key) -> str | None:
+        with open(self.db) as f:
+            data = json.load(f)
+            if key not in data:
+                return None
+            return data[key]
+
+    def set(self, key, value) -> None:
+        with open(self.db) as f:
+            data = json.load(f)
+            data[key] = value
+            json.dump(data, f)
+
+    def get_all(self) -> dict:
+        with open(self.db) as f:
+            data = json.load(f)
+            return data
+
+    def clean(self) -> None:
+        with open(self.db) as f:
+            data = json.load(f)
+            data = {}
+            json.dump(data, f)
+
+
 def get_location(city: str):
-    geolocator = Nominatim(user_agent="geoapiExercises")
+    geolocator = Nominatim(user_agent="FineYourDineTonight")
     location = geolocator.geocode(city)
     return location.latitude, location.longitude
 
 
-#By jk
-def search_restaurants(location, radius=2000, min_rating=4.0, open_now=True):
-    lat, lng = get_location(location)
+def get_coordinates(location):
+    geocode_result = gmaps.geocode(location)
+    if geocode_result:
+        lat = geocode_result[0]["geometry"]["location"]["lat"]
+        lng = geocode_result[0]["geometry"]["location"]["lng"]
+        return lat, lng
+    else:
+        raise ValueError("无法获取该地址的经纬度")
 
+
+# By jk
+def search_restaurants(
+    location: str | tuple[float, float], radius=2000, min_rating=3.0, open_now=True
+):
+    if isinstance(location, str):
+        lat, lng = get_location(location)
+    else:
+        lat, lng = location
     places_result = gmaps.places_nearby(
         location=(lat, lng), radius=radius, type="restaurant", open_now=open_now
     )
-
     restaurants = []
     for place in places_result["results"]:
         try:
@@ -60,21 +104,6 @@ def search_restaurants(location, radius=2000, min_rating=4.0, open_now=True):
     return restaurants
 
 
-# def main():
-#     location = input("请输入要查找的地理位置（例如：Shanghai, China）：")
-#     radius = int(input("请输入查找半径（以米为单位，例如：2000）："))
-#     min_rating = float(input("请输入最低评分要求："))
-#     open_now = input("是否仅显示当前营业的餐馆？（Y/N）：").lower() == 'y'
-
-#     restaurants = search_restaurants(location, radius, min_rating, open_now)
-
-#     df = pd.DataFrame(restaurants)
-#     if not df.empty:
-#         print("以下是符合条件的餐馆推荐：\n")
-#         print(df)
-#     else:
-#         print("没有找到符合条件的餐馆，请尝试修改筛选条件。")
-
 app = FastAPI(
     title="Dine",
     description="Interactive restaurant recommendation system",
@@ -98,11 +127,18 @@ class Conversation(BaseModel):
 conversations = {}
 
 
-def get_gpt_response(prompt: str) -> str:
-    response = openai.Completion.create(
-        engine="gpt-4-turbo", prompt=prompt, max_tokens=150, temperature=0.7
+def get_gpt_response(prompt: str, message: str, isjson=False) -> str:
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": message},
+        ],
+        max_tokens=150,
+        temperature=0.7,
+        response_format={"type": "json_object"} if isjson else NOT_GIVEN,
     )
-    return response["choices"][0]["text"].strip()
+    return response.choices[0].message.content.strip()
 
 
 @app.post("/start_conversation/")
@@ -115,7 +151,10 @@ async def start_conversation(user_id: str):
     initial_prompt = """
     You are a restaurant recommendation system. Engage in a step-by-step process to help the user decide what they might want to eat for dinner. Ask relevant questions about their mood, taste preferences, whether they want something light or heavy, if they are in a rush, etc. Ask one question at a time. Start with your first question.
     """
-    first_question = get_gpt_response(initial_prompt)
+    initial_message = """
+    Now you need to ask the user a question to help recommend a dinner option. What would you like to ask?
+    """
+    first_question = get_gpt_response(initial_prompt, initial_message)
 
     conversations[user_id] = Conversation(
         state=ConversationState.QUESTIONING, questions=[first_question]
@@ -132,24 +171,33 @@ async def answer_question(user_id: str, answer: str):
     conversation = conversations[user_id]
     conversation.answers.append(answer)
 
-    if len(conversation.answers) >= 5:
+    if len(conversation.answers) >= 3:
         conversation.state = ConversationState.FINAL
         prompt = f"""
         Based on the following conversation, suggest a type of cuisine or specific food the user might enjoy for dinner:
 
         {"".join(f"Q: {q}\nA: {a}\n" for q, a in zip(conversation.questions, conversation.answers))}
         """
-        recommendation = get_gpt_response(prompt)
+        message = """
+        Based on the following conversation, suggest a type of cuisine or specific food the user might enjoy for dinner:
+        give a list of user waht to eat, type of cuisine or specific food
+        """
+
+        recommendation = get_gpt_response(prompt, message)
         conversation.recommendation = recommendation
         return {"message": "Conversation completed", "recommendation": recommendation}
 
     else:
         prompt = f"""
-        Continue the conversation. Given the following exchange, ask the next relevant question to help recommend a dinner option:
+        Continue the conversation. Given the following exchange, ask the next relevant question to help recommend a dinner option,
+        Don't ask the same question as the previous one, but ask about the psychology of mood:
 
         {"".join(f"Q: {q}\nA: {a}\n" for q, a in zip(conversation.questions, conversation.answers))}
         """
-        next_question = get_gpt_response(prompt)
+        message = """
+        User has answered the question, continue the conversation. Given the following exchange, ask the next relevant question to help recommend a dinner option,
+        """
+        next_question = get_gpt_response(prompt, message)
         conversation.questions.append(next_question)
         return {"message": "Question answered", "next_question": next_question}
 
@@ -166,27 +214,63 @@ async def get_recommendation(user_id: str):
     return {"recommendation": conversation.recommendation}
 
 
-@app.get("/find_restaurants/")
-async def find_restaurants(user_id: str, city: str):
-    if (
-        user_id not in conversations
-        or conversations[user_id].state != ConversationState.FINAL
-    ):
-        raise HTTPException(
-            status_code=400, detail="Please complete the conversation first"
-        )
+@app.get("/get_recommendation_restaurant/")
+async def get_recommendation_restaurant(user_id: str, locate: str):
+    if user_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
 
-    recommendation = conversations[user_id].recommendation
-    restaurants = search_restaurants(city)
+    conversation = conversations[user_id]
+    if conversation.state != ConversationState.FINAL:
+        raise HTTPException(status_code=400, detail="Conversation is not yet complete")
+
+    recommendation = conversation.recommendation
+    restaurants = search_restaurants(locate)
+
+    prompt = f"""
+    user want to eat: {recommendation}
+    You Need only return json type Like: {{"name": "restaurant name", "address": "restaurant address","reason": "reason"}}
+    """
+    message = f"""
+    restaurants near by the user:
+    {"".join(f"Name: {restaurant['Name']}\nAddress: {restaurant['Address']}\n" for restaurant in restaurants)}
+    """
+    recommendation = get_gpt_response(prompt, message, isjson=True)
+    print(recommendation)
+    try:
+        json_recommendation = json.loads(recommendation)
+    except json.JSONDecodeError:
+        json_recommendation = []
 
     if restaurants:
         return {
             "status": "success",
-            "recommendation": recommendation,
+            "recommendation": json_recommendation,
+            "origin_restaurant": recommendation,
             "restaurants": [
                 {"name": restaurant["Name"], "address": restaurant["Address"]}
-                for restaurant in restaurants[:5]
+                for restaurant in restaurants
             ],
         }
     else:
         return {"status": "error", "message": "No nearby restaurants found."}
+
+
+@app.get("/search_restaurants/")
+async def find_restaurants(city: str):
+    restaurants = search_restaurants(city)
+    if restaurants:
+        return {
+            "status": "success",
+            "restaurants": [
+                {"name": restaurant["Name"], "address": restaurant["Address"]}
+                for restaurant in restaurants
+            ],
+        }
+    else:
+        return {"status": "error", "message": "No nearby restaurants found."}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
