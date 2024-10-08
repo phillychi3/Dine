@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math';
 
 void main() {
   runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -22,20 +21,25 @@ class MyApp extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
   @override
   _HomeScreenState createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String userId = 'user123'; // You might want to generate this or get from user login
+  String userId = '';
   String currentQuestion = '';
   String currentAnswer = '';
   String recommendation = '';
+  List<Map<String, String>> recommendedRestaurants = [];
+  bool conversationCompleted = false;
+  String errorMessage = '';
+  String location = ''; // New variable for location
+  TextEditingController answerController = TextEditingController(); // New controller for answer input
+  TextEditingController locationController = TextEditingController(); // New controller for location input
 
-  final String baseUrl = 'http://10.0.2.2:8000'; // Use this for Android emulator
-  // final String baseUrl = 'http://localhost:8000'; // Use this for iOS simulator
+  final String baseUrl = 'http://127.0.0.1:8000'; // Android emulator
+  // final String baseUrl = 'http://localhost:8000'; // iOS simulator
+  // final String baseUrl = 'http://your.actual.server.address'; // Production server
 
   @override
   void initState() {
@@ -43,12 +47,31 @@ class _HomeScreenState extends State<HomeScreen> {
     startConversation();
   }
 
+  @override
+  void dispose() {
+    answerController.dispose();
+    locationController.dispose();
+    super.dispose();
+  }
+
+  String generateRandomUserId() {
+    return Random().nextInt(1000000).toString().padLeft(6, '0');
+  }
+
   Future<void> startConversation() async {
+    setState(() {
+      userId = generateRandomUserId();
+      errorMessage = '';
+      conversationCompleted = false;
+      recommendation = '';
+      recommendedRestaurants = [];
+      answerController.clear();
+      locationController.clear();
+    });
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/start_conversation/'),
-        queryParameters: {'user_id': userId},
-      );
+        Uri.parse('$baseUrl/start_conversation/').replace(queryParameters: {'user_id': userId}),
+      ).timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -56,54 +79,74 @@ class _HomeScreenState extends State<HomeScreen> {
           currentQuestion = data['question'];
         });
       } else {
-        throw Exception('Failed to start conversation');
+        throw Exception('Server returned ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      print('Error starting conversation: $e');
-      // Show error message to user
+      setState(() {
+        errorMessage = 'Error starting conversation: $e';
+      });
+      print(errorMessage);
     }
   }
 
   Future<void> answerQuestion() async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/answer_question/'),
-        queryParameters: {'user_id': userId, 'answer': currentAnswer},
-      );
+        Uri.parse('$baseUrl/answer_question/').replace(queryParameters: {'user_id': userId, 'answer': currentAnswer}),
+      ).timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
-          currentQuestion = data['next_question'];
+          if (data['message'] == 'Conversation completed') {
+            conversationCompleted = true;
+            recommendation = data['recommendation'];
+          } else {
+            currentQuestion = data['next_question'];
+          }
+          answerController.clear(); // Clear the answer input
           currentAnswer = '';
         });
       } else {
-        throw Exception('Failed to submit answer');
+        throw Exception('Server returned ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      print('Error answering question: $e');
-      // Show error message to user
+      setState(() {
+        errorMessage = 'Error answering question: $e';
+      });
+      print(errorMessage);
     }
   }
 
-  Future<void> getRecommendation() async {
+  Future<void> getRecommendedRestaurants() async {
+    if (location.isEmpty) {
+      setState(() {
+        errorMessage = 'Please enter a location';
+      });
+      return;
+    }
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/get_recommendation/'),
-        queryParameters: {'user_id': userId},
-      );
+        Uri.parse('$baseUrl/get_recommendation_restaurant/').replace(queryParameters: {'user_id': userId, 'locate': location}),
+      ).timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        setState(() {
-          recommendation = data['recommendation'];
-        });
+        if (data['status'] == 'success') {
+          setState(() {
+            recommendedRestaurants = List<Map<String, String>>.from(data['recommendation']['restaurants']);
+          });
+        } else {
+          throw Exception('Failed to get restaurant recommendations: ${data['message']}');
+        }
       } else {
-        throw Exception('Failed to get recommendation');
+        throw Exception('Server returned ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      print('Error getting recommendation: $e');
-      // Show error message to user
+      setState(() {
+        errorMessage = 'Error getting restaurant recommendations: $e';
+      });
+      print(errorMessage);
     }
   }
 
@@ -111,46 +154,95 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dinner Recommendation'),
+        title: Text('Dinner Recommendation'),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
-              'Question:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              'User ID: $userId',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            Text(currentQuestion),
-            const SizedBox(height: 20),
-            TextField(
-              onChanged: (value) {
-                setState(() {
-                  currentAnswer = value;
-                });
-              },
-              decoration: const InputDecoration(
-                hintText: 'Enter your answer',
-                border: OutlineInputBorder(),
+            SizedBox(height: 20),
+            if (errorMessage.isNotEmpty)
+              Text(
+                'Error: $errorMessage',
+                style: TextStyle(color: Colors.red, fontSize: 16),
               ),
-            ),
-            const SizedBox(height: 20),
+            if (!conversationCompleted && errorMessage.isEmpty) ...[
+              Text(
+                'Question:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Text(currentQuestion),
+              SizedBox(height: 20),
+              TextField(
+                controller: answerController,
+                onChanged: (value) {
+                  setState(() {
+                    currentAnswer = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Enter your answer',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: answerQuestion,
+                child: Text('Submit Answer'),
+              ),
+            ] else if (conversationCompleted) ...[
+              Text(
+                'Recommendation:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Text(recommendation),
+              SizedBox(height: 20),
+              TextField(
+                controller: locationController,
+                onChanged: (value) {
+                  setState(() {
+                    location = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Enter location for restaurant recommendations',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: getRecommendedRestaurants,
+                child: Text('Get Restaurant Recommendations'),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Recommended Restaurants:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: recommendedRestaurants.length,
+                  itemBuilder: (context, index) {
+                    final restaurant = recommendedRestaurants[index];
+                    return ListTile(
+                      title: Text(restaurant['name'] ?? ''),
+                      subtitle: Text(restaurant['address'] ?? ''),
+                      trailing: Text(restaurant['reason'] ?? ''),
+                    );
+                  },
+                ),
+              ),
+            ],
+            SizedBox(height: 20),
             ElevatedButton(
-              onPressed: answerQuestion,
-              child: const Text('Submit Answer'),
+              onPressed: startConversation,
+              child: Text('Restart Conversation'),
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: getRecommendation,
-              child: const Text('Get Recommendation'),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Recommendation:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            Text(recommendation),
           ],
         ),
       ),
