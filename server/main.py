@@ -5,10 +5,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from enum import Enum
+from dotenv import load_dotenv
+import os
 
 
-openai.api_key = "OpenAI API"
-google_maps_api_key = "Google Maps API"
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+google_maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=google_maps_api_key)
 
 
@@ -25,13 +28,52 @@ def get_location(city: str):
     return location.latitude, location.longitude
 
 
-def find_nearby_restaurants(lat: float, lng: float, keyword: str = "restaurant"):
-    location = (lat, lng)
-    places_result = gmaps.places_nearby(
-        location, radius=1500, type="restaurant", keyword=keyword
-    )
-    return places_result["results"]
+#By jk
+def search_restaurants(location, radius=2000, min_rating=4.0, open_now=True):
+    lat, lng = get_location(location)
 
+    places_result = gmaps.places_nearby(
+        location=(lat, lng), radius=radius, type="restaurant", open_now=open_now
+    )
+
+    restaurants = []
+    for place in places_result["results"]:
+        try:
+            name = place["name"]
+            address = place.get("vicinity", "N/A")
+            rating = place.get("rating", "N/A")
+            total_ratings = place.get("user_ratings_total", 0)
+
+            if rating != "N/A" and rating >= min_rating:  # 过滤评分低于min_rating的餐馆
+                restaurants.append(
+                    {
+                        "Name": name,
+                        "Address": address,
+                        "Rating": rating,
+                        "Total Ratings": total_ratings,
+                        "Open Now": "Yes" if open_now else "N/A",
+                    }
+                )
+        except KeyError:
+            continue
+
+    return restaurants
+
+
+# def main():
+#     location = input("请输入要查找的地理位置（例如：Shanghai, China）：")
+#     radius = int(input("请输入查找半径（以米为单位，例如：2000）："))
+#     min_rating = float(input("请输入最低评分要求："))
+#     open_now = input("是否仅显示当前营业的餐馆？（Y/N）：").lower() == 'y'
+
+#     restaurants = search_restaurants(location, radius, min_rating, open_now)
+
+#     df = pd.DataFrame(restaurants)
+#     if not df.empty:
+#         print("以下是符合条件的餐馆推荐：\n")
+#         print(df)
+#     else:
+#         print("没有找到符合条件的餐馆，请尝试修改筛选条件。")
 
 app = FastAPI(
     title="Dine",
@@ -135,15 +177,14 @@ async def find_restaurants(user_id: str, city: str):
         )
 
     recommendation = conversations[user_id].recommendation
-    lat, lng = get_location(city)
-    restaurants = find_nearby_restaurants(lat, lng, recommendation)
+    restaurants = search_restaurants(city)
 
     if restaurants:
         return {
             "status": "success",
             "recommendation": recommendation,
             "restaurants": [
-                {"name": restaurant["name"], "address": restaurant["vicinity"]}
+                {"name": restaurant["Name"], "address": restaurant["Address"]}
                 for restaurant in restaurants[:5]
             ],
         }
