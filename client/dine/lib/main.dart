@@ -4,10 +4,12 @@ import 'dart:convert';
 import 'dart:math';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -16,17 +18,19 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: HomeScreen(),
+      home: const HomeScreen(),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  HomeScreenState createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   String userId = '';
   String currentQuestion = '';
   String currentAnswer = '';
@@ -39,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   TextEditingController answerController = TextEditingController();
   TextEditingController locationController = TextEditingController();
 
-  final String baseUrl = 'http://127.0.0.1:8000'; // Android emulator
+  final String baseUrl = 'http://127.0.0.1:8000';
 
   @override
   void initState() {
@@ -75,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Uri.parse('$baseUrl/start_conversation/')
                 .replace(queryParameters: {'user_id': userId}),
           )
-          .timeout(Duration(seconds: 10));
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -106,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Uri.parse('$baseUrl/answer_question/').replace(
                 queryParameters: {'user_id': userId, 'answer': currentAnswer}),
           )
-          .timeout(Duration(seconds: 10));
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -150,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Uri.parse('$baseUrl/get_recommendation_restaurant/').replace(
                 queryParameters: {'user_id': userId, 'locate': location}),
           )
-          .timeout(Duration(seconds: 10));
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -183,23 +187,23 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Dinner Recommendation'),
+        title: const Text('Dinner Recommendation'),
       ),
       body: Stack(
         children: [
           SingleChildScrollView(
-            padding: EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
                   'User ID: $userId',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 if (errorMessage.isNotEmpty)
                   Container(
-                    padding: EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(8),
                     color: Colors.red[100],
                     child: Text(
                       'Error: $errorMessage',
@@ -210,18 +214,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   Card(
                     elevation: 4,
                     child: Padding(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Question:',
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                           ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Text(currentQuestion),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           TextField(
                             controller: answerController,
                             onChanged: (value) {
@@ -229,19 +233,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                 currentAnswer = value;
                               });
                             },
-                            decoration: InputDecoration(
+                            decoration: const InputDecoration(
                               hintText: 'Enter your answer',
                               border: OutlineInputBorder(),
                             ),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: answerQuestion,
-                            child: Text('Submit Answer'),
                             style: ElevatedButton.styleFrom(
                               foregroundColor: Colors.white,
                               backgroundColor: Theme.of(context).primaryColor,
                             ),
+                            child: const Text('Submit Answer'),
                           ),
                         ],
                       ),
@@ -251,18 +255,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   Card(
                     elevation: 4,
                     child: Padding(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Recommendation:',
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                           ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Text(recommendation),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           TextField(
                             controller: locationController,
                             onChanged: (value) {
@@ -270,37 +274,37 @@ class _HomeScreenState extends State<HomeScreen> {
                                 location = value;
                               });
                             },
-                            decoration: InputDecoration(
+                            decoration: const InputDecoration(
                               hintText:
                                   'Enter location for restaurant recommendations',
                               border: OutlineInputBorder(),
                             ),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: getRecommendedRestaurants,
-                            child: Text('Get Restaurant Recommendations'),
                             style: ElevatedButton.styleFrom(
                               foregroundColor: Colors.white,
                               backgroundColor: Theme.of(context).primaryColor,
                             ),
+                            child: const Text('Get Restaurant Recommendations'),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
                   if (recommendedRestaurants.isNotEmpty) ...[
-                    Text(
+                    const Text(
                       'Recommended Restaurants:',
                       style:
                           TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     ...recommendedRestaurants
                         .map((restaurant) => Card(
                               elevation: 2,
-                              margin: EdgeInsets.only(bottom: 8),
+                              margin: const EdgeInsets.only(bottom: 8),
                               child: ListTile(
                                 title: Text(restaurant['name'] ?? ''),
                                 subtitle: Text(restaurant['address'] ?? ''),
@@ -310,17 +314,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                             ))
-                        .toList(),
+                        ,
                   ],
                 ],
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: startConversation,
-                  child: Text('Restart Conversation'),
                   style: ElevatedButton.styleFrom(
                     foregroundColor: Colors.white,
                     backgroundColor: Colors.grey,
                   ),
+                  child: const Text('Restart Conversation'),
                 ),
               ],
             ),
@@ -328,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isLoading)
             Container(
               color: Colors.black.withOpacity(0.5),
-              child: Center(
+              child: const Center(
                 child: CircularProgressIndicator(),
               ),
             ),
